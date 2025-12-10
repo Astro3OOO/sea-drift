@@ -167,8 +167,8 @@ def PrepareDataSet(start_t, end_t, border = [54, 62, 13, 30],
                     ds_netcdf.append(ds)
                     ds.close()
 
-    else:
-        logging.error('Add folder with ECMWF datasets.')
+    # else:
+    #     logging.error('Add folder with ECMWF datasets.')
             
     if copernicus:
         if user is None or pword is None:
