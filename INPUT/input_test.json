@@ -1,0 +1,18 @@
+{
+    "model": "OceanDrift",
+    "start_position": [57.5, 23.7],
+    "start_t": "2024-06-01 00:00:00",
+    "end_t": "2024-06-03 00:00:00",
+    "num": 50,
+    "rad": 100,
+    "seed_type": "elements",
+    "wdf": 0.03,
+    "orientation": "random",
+    "time_step": 1800,
+    "border": [56, 59, 21, 25],
+    "copernicus": true,
+    "file_name": "test_output.nc",
+    "vocabulary": "Copernicus",
+    "user":"",
+    "pword":""
+}

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ipynb
+.ipynb_checkpoints/
+.env
+.vscode/
+*.log
+*.tmp
+*.nc
+output/
