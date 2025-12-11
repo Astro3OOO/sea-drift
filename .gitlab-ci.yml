@@ -5,8 +5,8 @@ stages:
 build-image:
   stage: build
   image: docker:latest
-  services:
-    - docker:dind
+  tags:
+    - shell
   script:
     - docker build -t opendrift-container .
     - pytest tests
@@ -14,7 +14,7 @@ build-image:
 test-container:
   stage: test
   image: docker:latest
-  services:
-    - docker:dind
+  tags:
+    - shell
   script:
     - docker run opendrift-container python main.py input_test.json
