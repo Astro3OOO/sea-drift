@@ -321,19 +321,6 @@ def simulation(lw_obj=1, model='OceanDrift', start_position=None, start_t=None,
                rad=0, ship=[62, 8, 10, 5], wdf=0.02, orientation = 'random',
                delay=False, multi_rad=False, seed_type=None, time_step = None,
                configurations = None, file_name = None, vocabulary = None):
-    '''
-    model : choose or add apropriate OpenDrift model for your simulation.
-    start_position : enter start position [latitude, longitude]. It can be [float, float] or [list, list].
-    start_t : start time for seed and simulation. If not provided, readers start time is used. 
-    end_t : end time for simulation. If not provided simulation continue to the readers end time.
-    datesets : xarray.dataset or list of xarray.datasets. 
-    std_names : dict :  standard name mapping, different for ecmwf and copernicus. 
-    num : number of elements per seed.
-    rad : numeric or list. Numeric for radial seed, list for cone seed. 
-    ship : [length, beam, height, draft]
-    wdf : wind drift factor, default 2% for OceanDrift
-    lw_obj : leeway object from list 
-    '''
     
     # Check main requirments
     if start_position == None:
@@ -366,6 +353,7 @@ def simulation(lw_obj=1, model='OceanDrift', start_position=None, start_t=None,
         t_strt = start_t.strftime("%Y-%m-%d_%H%M")
         file_name = f'{m}_{t_strt}_{t_now}.nc'
     
+    # Make correct OUTPUT dir (abs/rel path) depending on where the code is running
     output_dir = os.getenv("OUTPUT")
 
     if output_dir is None:

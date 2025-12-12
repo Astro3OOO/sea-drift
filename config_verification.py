@@ -12,7 +12,7 @@ logging.basicConfig(
 
 SIMULATION_KEYS = ['lw_obj', 'model', 'start_position', 'start_t', 'end_t',
                   'num', 'rad', 'ship', 'wdf', 'orientation', 'seed_type',
-                  'time_step', 'configurations', 'file_name', 'vocabulary']
+                  'time_step', 'configurations', 'file_name', 'vocabulary', 'backtracking']
 DATASET_KEYS = ['start_t', 'end_t', 'border', 'folder', 'concatenation',  'copernicus', 'user', 'pword']
 REQUIRED_KEYS = ['model','start_position', 'start_t', 'end_t']
 VOC = ["Copernicus", "ECMWF", "Copernicus_edited"]
@@ -28,6 +28,13 @@ def unknown_keys(config: dict, sim_keys: list, ds_keys: list):
     allowed = set(sim_keys) | set(ds_keys)
     return list(set(config.keys()) - allowed)
 
+def check_rad(rad):
+    if isinstance(rad, int):
+        return rad >= 0
+    elif isinstance(rad, list) and all(isinstance(v, int) and v >= 0 for v in rad):
+        return True
+    return False
+    
 # Model-specific check functions
 def check_oceandrift(file, sim_vars):
     val = file.get('wdf')
@@ -65,37 +72,83 @@ def check_shipdrift(file, sim_vars):
 # Simulation settings check functions
 # Seed settings. If missing or invalid, use default values from function definition. 
 # Not crashing, just warning. 
-def check_seed_settings(file, sim_vars):
-    rules = {
-        "seed_type": {
-            "valid": lambda v: v in ["elements", "cone"],
-            "error": "Invalid or missing seed_type: {}. Using default: elements",
-        },
-        "num": {
-            "valid": lambda v: isinstance(v, int) and v > 0,
-            "error": "Invalid or missing num: {}. Must be positive integer. Using default: 100",
-        },
-        "rad": {
-            "valid": lambda v: isinstance(v, int) and v >= 0,
-            "error": "Invalid or missing rad: {}. Must be positive integer. Using default: 0",
-        }
-    }
+def check_seed_settings(flag, file, sim_vars):
+    if not flag:
+        return flag, sim_vars
+    st = file.get('seed_type')
+    num = file.get('num')
+    rad = file.get('rad')
+    pos = np.array(file.get("start_position", []))
+    shape = pos.shape
 
-    for key, rule in rules.items():
-        val = file.get(key)
-        if val is not None and rule["valid"](val):
-            sim_vars[key] = val
+    # Normalize coordinate size
+    # - shape (N,)    -> coords = 1
+    # - shape (2, N)  -> coords = N
+    coords = 1 if len(shape) == 1 else shape[1]
+    
+    # 1. validate number of particles
+    if isinstance(num, int) and num > 0:
+        if num % coords == 0:
+            sim_vars["num"] = num
         else:
-            logging.warning(rule["error"].format(val))
+            new = num * coords
+            logging.error(
+                f"Incorrect num={num}, not divisible by coordinate size {coords}. "
+                f"Using {new} instead."
+            )
+            sim_vars["num"] = new
+    else:
+        logging.error(f"Invalid num: {num}. Setting num={coords * 100}.")
+        sim_vars["num"] = coords * 100 
 
-    logging.info("Seed settings verified, success!")
-    return sim_vars
+    # 2. quick check for radiuss
+    if not check_rad(rad):
+        logging.error(f"Incorrect rad: {rad}. Using default rad=0.")
+        rad = 0
+    
+    # 3. specific logic for seed type        
+    if st == "elements":
+        sim_vars["seed_type"] = "elements"
+        if isinstance(rad, int):
+            sim_vars["rad"] = rad
+        elif isinstance(rad, list) and len(rad) == coords:
+            sim_vars["rad"] = rad
+        else:
+            logging.error(f"Incorrect rad={rad} for seed_type=elements. Using rad=0.")
+            sim_vars["rad"] = 0               
+    elif st == "cone":
+        sim_vars["seed_type"] = "cone"
+        # Mandatory rule: lat/lon sizes must be exactly 2
+        if coords != 2:
+            logging.error(
+                f"cone seed type requires exactly 2 coordinates (lat, lon). "
+                f"Got {coords}. Forcing rad=0."
+            )
+            sim_vars["rad"] = 0
+            return flag, sim_vars
+
+        if isinstance(rad, int):
+            sim_vars["rad"] = rad
+        elif isinstance(rad, list) and len(rad) == 2:
+            sim_vars["rad"] = rad
+        else:
+            logging.error(f"Incorrect rad={rad} for seed_type=cone. Using rad=0.")
+            sim_vars["rad"] = 0
+    else:
+        logging.warning(
+            f"Incorrect seed_type: {st}. Using default seed_type=elements."
+        )
+        sim_vars["seed_type"] = "elements"
+        sim_vars["rad"] = rad if isinstance(rad, int) else 0
+        
+    return flag, sim_vars
 
 # Time settings. If missing or invalid, use default values from function definition.
 # Return error if: incorect start time or end time. 
 # If time step is incorrect or not given, use default.
-def check_time_settings(file, sim_vars, data_vars):
-    flag = True
+def check_time_settings(flag, file, sim_vars, data_vars):
+    if not flag:
+        return flag, sim_vars, data_vars
     times = {}
     for key in ["start_t", "end_t"]:
         val = file.get(key)
@@ -109,14 +162,25 @@ def check_time_settings(file, sim_vars, data_vars):
             
     start = times.get("start_t")
     end = times.get("end_t")
-    if start is not None and end is not None:
-        if start >= end:
-            flag = False
-            logging.error(f"Start time: {start} must be earlier than end time: {end}.")   
-                 
+    bt = file.get('backtracking')
     time_step = file.get("time_step")
     
-    if isinstance(time_step, int) and time_step > 0:
+    if start and end:
+        if bt:
+            if start < end:
+                flag = False
+                logging.error(f"If backtracking is turned on, start time: {start} must be after end time: {end}.")  
+            if isinstance(time_step, int) and time_step < 0:
+                sim_vars['time_step'] = time_step
+        elif start < end:
+            if isinstance(time_step, int) and time_step > 0:
+                sim_vars['time_step'] = time_step     
+        else:    
+            flag = False
+            logging.error(f"Start time: {start} must be earlier than end time: {end}.")   
+    
+
+    elif bt and isinstance(time_step, int) and time_step < 0:
         sim_vars['time_step'] = time_step
     else:
         logging.warning(f"Invalid or missing time_step: {time_step}. Must be a positive integer.")
@@ -125,9 +189,11 @@ def check_time_settings(file, sim_vars, data_vars):
         logging.info("Time settings verified, success!")
     return flag, sim_vars, data_vars
 
+
 # Position settings. Will drop off if invalid position. Accept them if everythin is ok.
-def check_position_settings(file, sim_vars):
-    flag = True
+def check_position_settings(flag, file, sim_vars):
+    if not flag:
+        return flag, sim_vars
     rules = [
         {
             "valid": lambda arr: arr.ndim <= 2 and arr.shape[0] == 2,
@@ -238,12 +304,12 @@ def verify_config_file(file_path):
         return False, sim_vars, data_vars
     
     if all(key in config.keys() for key in REQUIRED_KEYS):
-        # logging.info('File reading successful. Main keys found:', list(config.keys()))
         sim_vars['model'] = config['model']
-        flag, sim_vars = check_position_settings(config, sim_vars)
-        flag, sim_vars, data_vars = check_time_settings(config, sim_vars, data_vars)
-        sim_vars  = check_seed_settings(config, sim_vars)
-        data_vars = check_data_settings(config, data_vars)
+        # parse the flag on each step, to avoid unncecary checkups if something failed
+        flag, sim_vars = check_position_settings(flag, config, sim_vars)
+        flag, sim_vars, data_vars = check_time_settings(flag, config, sim_vars, data_vars)
+        flag, sim_vars  = check_seed_settings(flag, config, sim_vars)           # if incorrect, fall back to defaults, do not raise an error. Flag just for skipping. 
+        data_vars = check_data_settings(config, data_vars)          # simulation can run with empty [] dataset, that will not raise an error
         match config['model']:
             case 'OceanDrift':
                 sim_vars = check_oceandrift(config, sim_vars)
