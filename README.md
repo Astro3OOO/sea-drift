@@ -5,7 +5,7 @@ As *input*, it accepts a JSON configuration file and datasets in GRIB or NetCDF 
 The *output* is a dataset containing movement trajectories, saved in NetCDF format.
 
 # Project Structure
-
+```
 opendrift-container/
 │
 ├── main.py                     # main program
@@ -27,7 +27,7 @@ opendrift-container/
 ├── .dockerignore               # files ignored by the container
 ├── .gitignore                  # files ignored by Git
 └── README.md    
-
+```
 # Setup & Usage
 
 
